@@ -1,0 +1,430 @@
+import tkinter as tk
+from tkinter import filedialog, messagebox, ttk
+import pandas as pd
+import os
+import shutil
+from datetime import datetime
+
+class ExcelConverterGUI:
+    def __init__(self, root):
+        self.root = root
+        self.root.title("Excel区切り文字変換ツール")
+        self.root.geometry("650x500")
+        
+        # ファイルパス関連
+        self.input_path = tk.StringVar()
+        self.output_path = tk.StringVar()
+        self.backup_path = tk.StringVar()
+        
+        # 区切り文字選択
+        self.delimiter_var = tk.StringVar(value="tab")  # デフォルトをタブに
+        
+        # バックアップ設定
+        self.enable_backup = tk.BooleanVar(value=True)
+        self.auto_backup_name = tk.BooleanVar(value=True)
+        
+        # 強制テキスト読み込み
+        self.force_text = tk.BooleanVar(value=False)
+        
+        self.create_widgets()
+    
+    def create_widgets(self):
+        # メインフレーム
+        main_frame = ttk.Frame(self.root, padding="10")
+        main_frame.grid(row=0, column=0, sticky=(tk.W, tk.E, tk.N, tk.S))
+        
+        # 入力ファイル選択
+        ttk.Label(main_frame, text="入力ファイル:").grid(row=0, column=0, sticky=tk.W, pady=5)
+        ttk.Entry(main_frame, textvariable=self.input_path, width=50).grid(row=0, column=1, padx=5)
+        ttk.Button(main_frame, text="参照", command=self.browse_input_file).grid(row=0, column=2)
+        
+        # 出力ファイル選択
+        ttk.Label(main_frame, text="出力ファイル:").grid(row=1, column=0, sticky=tk.W, pady=5)
+        ttk.Entry(main_frame, textvariable=self.output_path, width=50).grid(row=1, column=1, padx=5)
+        ttk.Button(main_frame, text="参照", command=self.browse_output_file).grid(row=1, column=2)
+        
+        # バックアップ設定フレーム
+        backup_frame = ttk.LabelFrame(main_frame, text="バックアップ設定", padding="10")
+        backup_frame.grid(row=2, column=0, columnspan=3, sticky=(tk.W, tk.E), pady=5)
+        
+        ttk.Checkbutton(backup_frame, text="バックアップを作成", variable=self.enable_backup, 
+                       command=self.toggle_backup).grid(row=0, column=0, sticky=tk.W)
+        ttk.Checkbutton(backup_frame, text="自動でバックアップ名を生成", variable=self.auto_backup_name,
+                       command=self.update_backup_path).grid(row=0, column=1, sticky=tk.W)
+        
+        # バックアップパス
+        self.backup_label = ttk.Label(backup_frame, text="バックアップ先:")
+        self.backup_label.grid(row=1, column=0, sticky=tk.W, pady=5)
+        self.backup_entry = ttk.Entry(backup_frame, textvariable=self.backup_path, width=50)
+        self.backup_entry.grid(row=1, column=1, padx=5)
+        self.backup_button = ttk.Button(backup_frame, text="参照", command=self.browse_backup_path)
+        self.backup_button.grid(row=1, column=2)
+        
+        # 区切り文字選択
+        delimiter_frame = ttk.LabelFrame(main_frame, text="区切り文字選択", padding="10")
+        delimiter_frame.grid(row=3, column=0, columnspan=3, sticky=(tk.W, tk.E), pady=10)
+        
+        ttk.Radiobutton(delimiter_frame, text="タブ (\\t)", variable=self.delimiter_var, value="tab").grid(row=0, column=0, sticky=tk.W)
+        ttk.Radiobutton(delimiter_frame, text="カンマ (,)", variable=self.delimiter_var, value="comma").grid(row=0, column=1, sticky=tk.W)
+        ttk.Radiobutton(delimiter_frame, text="空白 ( )", variable=self.delimiter_var, value="space").grid(row=0, column=2, sticky=tk.W)
+        ttk.Radiobutton(delimiter_frame, text="セミコロン (;)", variable=self.delimiter_var, value="semicolon").grid(row=1, column=0, sticky=tk.W)
+        
+        # 強制読み込みオプション
+        force_frame = ttk.Frame(delimiter_frame)
+        force_frame.grid(row=2, column=0, columnspan=3, pady=5)
+        
+        ttk.Checkbutton(force_frame, text="テキストファイルとして強制読み込み", 
+                       variable=self.force_text).pack(side=tk.LEFT)
+        
+        # プレビューエリア
+        preview_frame = ttk.LabelFrame(main_frame, text="プレビュー", padding="5")
+        preview_frame.grid(row=4, column=0, columnspan=3, sticky=(tk.W, tk.E, tk.N, tk.S), pady=10)
+        
+        self.preview_text = tk.Text(preview_frame, height=10, width=70)
+        scrollbar = ttk.Scrollbar(preview_frame, orient="vertical", command=self.preview_text.yview)
+        self.preview_text.configure(yscrollcommand=scrollbar.set)
+        
+        self.preview_text.grid(row=0, column=0, sticky=(tk.W, tk.E, tk.N, tk.S))
+        scrollbar.grid(row=0, column=1, sticky=(tk.N, tk.S))
+        
+        # ボタンフレーム
+        button_frame = ttk.Frame(main_frame)
+        button_frame.grid(row=5, column=0, columnspan=3, pady=10)
+        
+        ttk.Button(button_frame, text="プレビュー", command=self.preview_conversion).pack(side=tk.LEFT, padx=5)
+        ttk.Button(button_frame, text="変換実行", command=self.convert_file).pack(side=tk.LEFT, padx=5)
+        ttk.Button(button_frame, text="バックアップ復元", command=self.restore_backup).pack(side=tk.LEFT, padx=5)
+        ttk.Button(button_frame, text="クリア", command=self.clear_all).pack(side=tk.LEFT, padx=5)
+        
+        # グリッドの重み設定
+        main_frame.columnconfigure(1, weight=1)
+        main_frame.rowconfigure(4, weight=1)
+        preview_frame.columnconfigure(0, weight=1)
+        preview_frame.rowconfigure(0, weight=1)
+    
+    def toggle_backup(self):
+        """バックアップ有効/無効の切り替え"""
+        if self.enable_backup.get():
+            self.backup_label.grid()
+            self.backup_entry.grid()
+            self.backup_button.grid()
+            self.update_backup_path()
+        else:
+            self.backup_label.grid_remove()
+            self.backup_entry.grid_remove()
+            self.backup_button.grid_remove()
+    
+    def update_backup_path(self):
+        """バックアップパスを自動更新"""
+        if not self.enable_backup.get() or not self.auto_backup_name.get():
+            return
+            
+        input_file = self.input_path.get()
+        if input_file:
+            base_dir = os.path.dirname(input_file)
+            base_name = os.path.splitext(os.path.basename(input_file))[0]
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            backup_name = f"{base_name}_backup_{timestamp}{os.path.splitext(input_file)[1]}"
+            backup_full_path = os.path.join(base_dir, "backup", backup_name)
+            self.backup_path.set(backup_full_path)
+    
+    def browse_input_file(self):
+        file_path = filedialog.askopenfilename(
+            title="入力ファイルを選択",
+            filetypes=[
+                ("Excelファイル", "*.xlsx *.xls"),
+                ("CSVファイル", "*.csv"),
+                ("テキストファイル", "*.txt"),
+                ("すべてのファイル", "*.*")
+            ]
+        )
+        if file_path:
+            self.input_path.set(file_path)
+            # 出力ファイル名を自動生成（タブ区切りの場合は.txtに）
+            base, ext = os.path.splitext(file_path)
+            delimiter_suffix = {
+                "comma": "_comma.csv",
+                "space": "_space.txt",
+                "tab": "_tab.txt",  # タブ区切りは.txt
+                "semicolon": "_semicolon.csv"
+            }
+            suffix = delimiter_suffix.get(self.delimiter_var.get(), "_converted.txt")
+            self.output_path.set(base + suffix)
+            # バックアップパスも自動更新
+            self.update_backup_path()
+    
+    def browse_output_file(self):
+        file_path = filedialog.asksaveasfilename(
+            title="出力ファイルを指定",
+            filetypes=[
+                ("タブ区切りテキスト", "*.txt"),
+                ("CSVファイル", "*.csv"),
+                ("すべてのファイル", "*.*")
+            ]
+        )
+        if file_path:
+            self.output_path.set(file_path)
+            self.update_backup_path()
+    
+    def browse_backup_path(self):
+        """バックアップ先を選択"""
+        file_path = filedialog.asksaveasfilename(
+            title="バックアップファイルを指定",
+            filetypes=[
+                ("Excelファイル", "*.xlsx *.xls"),
+                ("CSVファイル", "*.csv"),
+                ("テキストファイル", "*.txt"),
+                ("すべてのファイル", "*.*")
+            ]
+        )
+        if file_path:
+            self.backup_path.set(file_path)
+    
+    def get_delimiter(self):
+        delimiter_map = {
+            "comma": ",",
+            "space": " ",
+            "tab": "\t",
+            "semicolon": ";"
+        }
+        return delimiter_map.get(self.delimiter_var.get(), "\t")  # デフォルトはタブ
+    
+    def detect_file_format(self, file_path):
+        """ファイルの実際の形式を検出"""
+        try:
+            with open(file_path, 'rb') as f:
+                header = f.read(8)
+            
+            # ファイルヘッダーで形式を判定
+            if header.startswith(b'PK'):
+                return 'xlsx'  # ZIP based (Excel 2007+)
+            elif header.startswith(b'\xd0\xcf\x11\xe0'):
+                return 'xls'   # OLE2 based (Excel 97-2003)
+            elif header.startswith(b'\xef\xbb\xbf') or header.startswith(b'\xff\xfe') or header.startswith(b'\xfe\xff'):
+                return 'text'  # UTF-8 BOM or UTF-16
+            else:
+                return 'text'  # テキストファイルとして扱う
+        except:
+            return 'text'
+    
+    def read_as_text_file(self, file_path):
+        """テキストファイルとして読み込む"""
+        encodings = ['utf-8-sig', 'shift_jis', 'cp932', 'utf-8', 'latin1']
+        separators = [None, '\t', ',', ';', ' ', '|']
+        
+        for encoding in encodings:
+            for sep in separators:
+                try:
+                    if sep is None:
+                        df = pd.read_csv(file_path, sep=None, engine='python', encoding=encoding)
+                    else:
+                        df = pd.read_csv(file_path, sep=sep, encoding=encoding)
+                    
+                    if not df.empty and len(df.columns) > 1:
+                        return df
+                except:
+                    continue
+        
+        raise ValueError("テキストファイルとして読み込めませんでした")
+    
+    def read_file(self, file_path):
+        """ファイルを読み込んでDataFrameを返す"""
+        try:
+            # 強制テキスト読み込みが有効な場合
+            if self.force_text.get():
+                return self.read_as_text_file(file_path)
+            
+            # 実際のファイル形式を検出
+            actual_format = self.detect_file_format(file_path)
+            
+            if actual_format == 'xlsx':
+                df = pd.read_excel(file_path, engine='openpyxl')
+            elif actual_format == 'xls':
+                try:
+                    df = pd.read_excel(file_path, engine='xlrd')
+                except:
+                    df = pd.read_excel(file_path, engine='openpyxl')
+            else:
+                # テキストファイルとして読み込み
+                df = self.read_as_text_file(file_path)
+            
+            # データが空でないかチェック
+            if df.empty:
+                messagebox.showwarning("警告", "ファイルにデータが含まれていません")
+                return None
+                
+            return df
+            
+        except ImportError as e:
+            # ライブラリ不足の場合
+            if "xlrd" in str(e):
+                error_msg = "xlrdライブラリが不足しています。\n\n以下のコマンドを実行してください:\npip install xlrd"
+            elif "openpyxl" in str(e):
+                error_msg = "openpyxlライブラリが不足しています。\n\n以下のコマンドを実行してください:\npip install openpyxl"
+            else:
+                error_msg = f"必要なライブラリが不足しています:\n{str(e)}"
+            messagebox.showerror("ライブラリエラー", error_msg)
+            return None
+        except Exception as e:
+            # Excel読み込みに失敗した場合、テキストファイルとして試す
+            try:
+                df = self.read_as_text_file(file_path)
+                messagebox.showinfo("情報", "Excelファイルとして読み込めませんでしたが、\nテキストファイルとして処理しました。")
+                return df
+            except:
+                # ファイル形式の問題を詳しく説明
+                error_msg = f"ファイル読み込みエラー:\n{str(e)}\n\n"
+                
+                if "zip" in str(e).lower():
+                    error_msg += "対策:\n"
+                    error_msg += "1. 「テキストファイルとして強制読み込み」をチェックしてください\n"
+                    error_msg += "2. Excelで開いて「名前を付けて保存」→「CSV (カンマ区切り)」\n"
+                    error_msg += "3. または「Excel ワークブック (.xlsx)」で保存し直してください"
+                
+                messagebox.showerror("エラー", error_msg)
+                return None
+    
+    def create_backup(self):
+        """バックアップを作成"""
+        if not self.enable_backup.get():
+            return True
+            
+        input_file = self.input_path.get()
+        backup_file = self.backup_path.get()
+        
+        if not input_file or not backup_file:
+            return True  # バックアップ無効として処理継続
+        
+        try:
+            # バックアップディレクトリを作成
+            backup_dir = os.path.dirname(backup_file)
+            if backup_dir and not os.path.exists(backup_dir):
+                os.makedirs(backup_dir)
+            
+            # ファイルをコピー
+            shutil.copy2(input_file, backup_file)
+            return True
+            
+        except Exception as e:
+            messagebox.showerror("バックアップエラー", f"バックアップ作成に失敗しました:\n{str(e)}")
+            return False
+    
+    def preview_conversion(self):
+        """変換結果をプレビュー"""
+        if not self.input_path.get():
+            messagebox.showwarning("警告", "入力ファイルを選択してください")
+            return
+        
+        df = self.read_file(self.input_path.get())
+        if df is None:
+            return
+        
+        delimiter = self.get_delimiter()
+        
+        # プレビュー用に最初の10行を変換
+        preview_df = df.head(10)
+        
+        if delimiter == "\t":
+            # タブ区切りの場合、視覚的に分かりやすく表示
+            preview_text = "--- プレビュー（最初の10行）---\n"
+            preview_text += "※タブ区切りは「→」で表示しています\n\n"
+            
+            # ヘッダー行
+            headers = list(preview_df.columns)
+            preview_text += "→".join(str(h) for h in headers) + "\n"
+            
+            # データ行
+            for _, row in preview_df.iterrows():
+                row_text = "→".join(str(val) if pd.notna(val) else "" for val in row.values)
+                preview_text += row_text + "\n"
+        else:
+            # その他の区切り文字
+            preview_text = preview_df.to_csv(sep=delimiter, index=False)
+            preview_text = f"--- プレビュー（最初の10行）---\n{preview_text}"
+        
+        self.preview_text.delete(1.0, tk.END)
+        self.preview_text.insert(1.0, preview_text)
+    
+    def convert_file(self):
+        """ファイル変換を実行"""
+        if not self.input_path.get() or not self.output_path.get():
+            messagebox.showwarning("警告", "入力ファイルと出力ファイルを指定してください")
+            return
+        
+        try:
+            # バックアップを作成
+            if not self.create_backup():
+                return  # バックアップ失敗時は処理を中止
+            
+            df = self.read_file(self.input_path.get())
+            if df is None:
+                return
+            
+            delimiter = self.get_delimiter()
+            
+            # ファイルを保存
+            df.to_csv(self.output_path.get(), sep=delimiter, index=False, encoding='utf-8-sig')
+            
+            backup_msg = ""
+            if self.enable_backup.get():
+                backup_msg = f"\nバックアップ: {self.backup_path.get()}"
+            
+            # タブ区切りの場合、特別なメッセージ
+            if delimiter == "\t":
+                conversion_msg = f"Excel → タブ区切りテキスト変換完了！\n出力ファイル: {self.output_path.get()}{backup_msg}\n\n※各セルがタブで区切られて保存されました。"
+            else:
+                conversion_msg = f"変換完了！\n出力ファイル: {self.output_path.get()}{backup_msg}"
+            
+            messagebox.showinfo("完了", conversion_msg)
+            
+        except Exception as e:
+            messagebox.showerror("エラー", f"変換エラー:\n{str(e)}")
+    
+    def restore_backup(self):
+        """バックアップから復元"""
+        backup_file = filedialog.askopenfilename(
+            title="復元するバックアップファイルを選択",
+            filetypes=[
+                ("Excelファイル", "*.xlsx *.xls"),
+                ("CSVファイル", "*.csv"),
+                ("テキストファイル", "*.txt"),
+                ("すべてのファイル", "*.*")
+            ]
+        )
+        
+        if not backup_file:
+            return
+        
+        restore_to = filedialog.asksaveasfilename(
+            title="復元先を指定",
+            filetypes=[
+                ("Excelファイル", "*.xlsx *.xls"),
+                ("CSVファイル", "*.csv"),
+                ("テキストファイル", "*.txt"),
+                ("すべてのファイル", "*.*")
+            ]
+        )
+        
+        if not restore_to:
+            return
+        
+        try:
+            shutil.copy2(backup_file, restore_to)
+            messagebox.showinfo("復元完了", f"バックアップファイルを復元しました:\n{restore_to}")
+        except Exception as e:
+            messagebox.showerror("復元エラー", f"復元に失敗しました:\n{str(e)}")
+    
+    def clear_all(self):
+        """すべてクリア"""
+        self.input_path.set("")
+        self.output_path.set("")
+        self.backup_path.set("")
+        self.preview_text.delete(1.0, tk.END)
+
+def main():
+    root = tk.Tk()
+    app = ExcelConverterGUI(root)
+    root.mainloop()
+
+if __name__ == "__main__":
+    main()
