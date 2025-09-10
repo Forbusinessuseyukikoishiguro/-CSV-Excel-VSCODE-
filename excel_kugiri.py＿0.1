@@ -1,0 +1,208 @@
+import tkinter as tk
+from tkinter import filedialog, messagebox, ttk
+import pandas as pd
+import os
+
+class ExcelConverterGUI:
+    def __init__(self, root):
+        self.root = root
+        self.root.title("Excel区切り文字変換ツール")
+        self.root.geometry("600x400")
+        
+        # ファイルパス関連
+        self.input_path = tk.StringVar()
+        self.output_path = tk.StringVar()
+        
+        # 区切り文字選択
+        self.delimiter_var = tk.StringVar(value="comma")
+        
+        self.create_widgets()
+    
+    def create_widgets(self):
+        # メインフレーム
+        main_frame = ttk.Frame(self.root, padding="10")
+        main_frame.grid(row=0, column=0, sticky=(tk.W, tk.E, tk.N, tk.S))
+        
+        # 入力ファイル選択
+        ttk.Label(main_frame, text="入力ファイル:").grid(row=0, column=0, sticky=tk.W, pady=5)
+        ttk.Entry(main_frame, textvariable=self.input_path, width=50).grid(row=0, column=1, padx=5)
+        ttk.Button(main_frame, text="参照", command=self.browse_input_file).grid(row=0, column=2)
+        
+        # 出力ファイル選択
+        ttk.Label(main_frame, text="出力ファイル:").grid(row=1, column=0, sticky=tk.W, pady=5)
+        ttk.Entry(main_frame, textvariable=self.output_path, width=50).grid(row=1, column=1, padx=5)
+        ttk.Button(main_frame, text="参照", command=self.browse_output_file).grid(row=1, column=2)
+        
+        # 区切り文字選択
+        delimiter_frame = ttk.LabelFrame(main_frame, text="区切り文字選択", padding="10")
+        delimiter_frame.grid(row=2, column=0, columnspan=3, sticky=(tk.W, tk.E), pady=10)
+        
+        ttk.Radiobutton(delimiter_frame, text="カンマ (,)", variable=self.delimiter_var, value="comma").grid(row=0, column=0, sticky=tk.W)
+        ttk.Radiobutton(delimiter_frame, text="空白 ( )", variable=self.delimiter_var, value="space").grid(row=0, column=1, sticky=tk.W)
+        ttk.Radiobutton(delimiter_frame, text="タブ", variable=self.delimiter_var, value="tab").grid(row=0, column=2, sticky=tk.W)
+        ttk.Radiobutton(delimiter_frame, text="セミコロン (;)", variable=self.delimiter_var, value="semicolon").grid(row=1, column=0, sticky=tk.W)
+        
+        # プレビューエリア
+        preview_frame = ttk.LabelFrame(main_frame, text="プレビュー", padding="5")
+        preview_frame.grid(row=3, column=0, columnspan=3, sticky=(tk.W, tk.E, tk.N, tk.S), pady=10)
+        
+        self.preview_text = tk.Text(preview_frame, height=10, width=70)
+        scrollbar = ttk.Scrollbar(preview_frame, orient="vertical", command=self.preview_text.yview)
+        self.preview_text.configure(yscrollcommand=scrollbar.set)
+        
+        self.preview_text.grid(row=0, column=0, sticky=(tk.W, tk.E, tk.N, tk.S))
+        scrollbar.grid(row=0, column=1, sticky=(tk.N, tk.S))
+        
+        # ボタンフレーム
+        button_frame = ttk.Frame(main_frame)
+        button_frame.grid(row=4, column=0, columnspan=3, pady=10)
+        
+        ttk.Button(button_frame, text="プレビュー", command=self.preview_conversion).pack(side=tk.LEFT, padx=5)
+        ttk.Button(button_frame, text="変換実行", command=self.convert_file).pack(side=tk.LEFT, padx=5)
+        ttk.Button(button_frame, text="クリア", command=self.clear_all).pack(side=tk.LEFT, padx=5)
+        
+        # グリッドの重み設定
+        main_frame.columnconfigure(1, weight=1)
+        main_frame.rowconfigure(3, weight=1)
+        preview_frame.columnconfigure(0, weight=1)
+        preview_frame.rowconfigure(0, weight=1)
+    
+    def browse_input_file(self):
+        file_path = filedialog.askopenfilename(
+            title="入力ファイルを選択",
+            filetypes=[
+                ("Excelファイル", "*.xlsx *.xls"),
+                ("CSVファイル", "*.csv"),
+                ("テキストファイル", "*.txt"),
+                ("すべてのファイル", "*.*")
+            ]
+        )
+        if file_path:
+            self.input_path.set(file_path)
+            # 出力ファイル名を自動生成
+            base, ext = os.path.splitext(file_path)
+            delimiter_suffix = {
+                "comma": "_comma.csv",
+                "space": "_space.txt",
+                "tab": "_tab.txt",
+                "semicolon": "_semicolon.csv"
+            }
+            suffix = delimiter_suffix.get(self.delimiter_var.get(), "_converted.txt")
+            self.output_path.set(base + suffix)
+    
+    def browse_output_file(self):
+        file_path = filedialog.asksaveasfilename(
+            title="出力ファイルを指定",
+            filetypes=[
+                ("CSVファイル", "*.csv"),
+                ("テキストファイル", "*.txt"),
+                ("すべてのファイル", "*.*")
+            ]
+        )
+        if file_path:
+            self.output_path.set(file_path)
+    
+    def get_delimiter(self):
+        delimiter_map = {
+            "comma": ",",
+            "space": " ",
+            "tab": "\t",
+            "semicolon": ";"
+        }
+        return delimiter_map.get(self.delimiter_var.get(), ",")
+    
+    def read_file(self, file_path):
+        """ファイルを読み込んでDataFrameを返す"""
+        try:
+            if file_path.endswith('.xlsx'):
+                # xlsxファイル用エンジンを明示的に指定
+                df = pd.read_excel(file_path, engine='openpyxl')
+            elif file_path.endswith('.xls'):
+                # xlsファイル用エンジンを明示的に指定
+                try:
+                    df = pd.read_excel(file_path, engine='xlrd')
+                except:
+                    # xlrdが使えない場合はopenpyxlを試す
+                    df = pd.read_excel(file_path, engine='openpyxl')
+            elif file_path.endswith('.csv'):
+                # CSV の場合、区切り文字を自動判定
+                df = pd.read_csv(file_path, sep=None, engine='python', encoding='utf-8-sig')
+            else:
+                # テキストファイルの場合、タブ区切りと仮定
+                df = pd.read_csv(file_path, sep='\t', encoding='utf-8-sig')
+            return df
+        except ImportError as e:
+            # ライブラリ不足の場合
+            if "xlrd" in str(e):
+                error_msg = "xlrdライブラリが不足しています。\n\n以下のコマンドを実行してください:\npip install xlrd"
+            elif "openpyxl" in str(e):
+                error_msg = "openpyxlライブラリが不足しています。\n\n以下のコマンドを実行してください:\npip install openpyxl"
+            else:
+                error_msg = f"必要なライブラリが不足しています:\n{str(e)}"
+            messagebox.showerror("ライブラリエラー", error_msg)
+            return None
+        except Exception as e:
+            # その他のエラー
+            error_msg = f"ファイル読み込みエラー:\n{str(e)}\n\n"
+            if "engine" in str(e).lower():
+                error_msg += "対策:\n"
+                error_msg += "1. pip install openpyxl xlrd を実行\n"
+                error_msg += "2. ファイルが破損していないか確認\n"
+                error_msg += "3. ファイルが他のアプリで開かれていないか確認"
+            messagebox.showerror("エラー", error_msg)
+            return None
+    
+    def preview_conversion(self):
+        """変換結果をプレビュー"""
+        if not self.input_path.get():
+            messagebox.showwarning("警告", "入力ファイルを選択してください")
+            return
+        
+        df = self.read_file(self.input_path.get())
+        if df is None:
+            return
+        
+        delimiter = self.get_delimiter()
+        
+        # プレビュー用に最初の10行を変換
+        preview_df = df.head(10)
+        preview_text = preview_df.to_csv(sep=delimiter, index=False)
+        
+        self.preview_text.delete(1.0, tk.END)
+        self.preview_text.insert(1.0, f"--- プレビュー（最初の10行）---\n{preview_text}")
+    
+    def convert_file(self):
+        """ファイル変換を実行"""
+        if not self.input_path.get() or not self.output_path.get():
+            messagebox.showwarning("警告", "入力ファイルと出力ファイルを指定してください")
+            return
+        
+        try:
+            df = self.read_file(self.input_path.get())
+            if df is None:
+                return
+            
+            delimiter = self.get_delimiter()
+            
+            # ファイルを保存
+            df.to_csv(self.output_path.get(), sep=delimiter, index=False, encoding='utf-8-sig')
+            
+            messagebox.showinfo("完了", f"変換完了！\n出力ファイル: {self.output_path.get()}")
+            
+        except Exception as e:
+            messagebox.showerror("エラー", f"変換エラー:\n{str(e)}")
+    
+    def clear_all(self):
+        """すべてクリア"""
+        self.input_path.set("")
+        self.output_path.set("")
+        self.backup_path.set("")
+        self.preview_text.delete(1.0, tk.END)
+
+def main():
+    root = tk.Tk()
+    app = ExcelConverterGUI(root)
+    root.mainloop()
+
+if __name__ == "__main__":
+    main()
